@@ -24,7 +24,7 @@ To test the effectiveness of LSTM on stock prediction, use some very simple feat
 
 
 
-### test methods
+`Test methods`
 greedy forward selection using cross validation
 
 SelectKBest Algorithm, f_regression, F statistic
@@ -35,7 +35,7 @@ compare the prediction accuracies of SVM algorithm and MART (a decision tree bas
 
 
 
-## some thoughts 
+## Some thoughts 
 what should be the target?
 next one/five/fifteen minute's percent change?
 - use one minute level feature to predict next 15 mintues pct
