@@ -1,7 +1,7 @@
 # Stock Prediction using Neural Network
 ---
 In this project, I want to implement LSTM to predict stock price on a minute-level frequency.
-Basically, I want LSTM learn from a set window size of data (maybe stock return in the last ten minutes) so that it can be used to predict the next N-steps in the series.
+Basically, I want LSTM model to learn from a set window size of data (maybe stock return in the last ten minutes) so that it can be used to predict the next N-steps in the series.
 
 This project is divided into five part:
 1. data processing
