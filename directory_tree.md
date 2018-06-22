@@ -25,3 +25,14 @@ file needed:
 
 file saved to: `'g:/lstm/lstm_tick_' + d + '.h5'` with four earray
 
+
+
+### Daily Updates 
+1. tick data: update_tick.py
+2. calculate pretrade data: update_tick_pretrade.py
+3. upload pretrade data into database: prepare_twap_v2.py
+4. calculate and update features: update_feature.py
+
+### Version control
+1. prepare_feature_v5.py: last version currently. Fix bugs on trading volume normalization
+2. prepare_feature_v5_v2.py: add first 5 minutes into training set.
