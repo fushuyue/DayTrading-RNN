@@ -1,3 +1,129 @@
+def time_to_batch(value, dilation, name=None):
+    with tf.name_scope('time_to_batch'):
+        shape = tf.shape(value)
+        pad_elements = dilation - 1 - (shape[1] + dilation - 1) % dilation
+        padded = tf.pad(value, [[0, 0], [0, pad_elements], [0, 0]])
+        reshaped = tf.reshape(padded, [-1, dilation, shape[2]])
+        transposed = tf.transpose(reshaped, perm=[1, 0, 2])
+        return tf.reshape(transposed, [shape[0] * dilation, -1, shape[2]])
+
+
+def batch_to_time(value, dilation, name=None):
+    with tf.name_scope('batch_to_time'):
+        shape = tf.shape(value)
+        prepared = tf.reshape(value, [dilation, -1, shape[2]])
+        transposed = tf.transpose(prepared, perm=[1, 0, 2])
+        return tf.reshape(transposed,
+                          [tf.div(shape[0], dilation), -1, shape[2]])
+
+
+def causal_conv(value, filter_, dilation, name='causal_conv'):
+    with tf.name_scope(name):
+        filter_width = tf.shape(filter_)[0]
+        padding = [[0, 0], [(filter_width - 1) * dilation, 0], [0, 0]]
+        padded = tf.pad(value, padding)
+        
+        if dilation > 1:
+            transformed = time_to_batch(padded, dilation)
+            conv = tf.nn.conv1d(transformed, filter_, stride=1,
+                                padding='VALID')
+            restored = batch_to_time(conv, dilation)
+        else:
+            restored = tf.nn.conv1d(padded, filter_, stride=1, padding='VALID')
+        # Remove excess elements at the end.
+        out_width = tf.shape(value)[1]
+        result = tf.slice(restored,
+                          [0, 0, 0],
+                          [-1, out_width, -1])
+        return result
+    
+def create_causal_layer(input_batch):
+    with tf.name_scope('create_causal_layer'): 
+        weights_filter = tf.Variable(initializer(shape=[1, 35, 64]) , name="W1")
+        return causal_conv(input_batch,weights_filter,1)
+        
+def create_dilation_layer(input_batch, dilation):
+    
+    filter_shape = [2, 64, 64]
+    weights_filter1 = tf.Variable(initializer(shape=filter_shape) , name="W1")
+    filter_bias1 = tf.Variable(tf.constant(0.1, shape=[64]), name="b1")   
+    
+    weights_filter2 = tf.Variable(initializer(shape=filter_shape) , name="W2")
+    filter_bias2 = tf.Variable(tf.constant(0.1, shape=[64]), name="b2")  
+    
+    conv_filter = causal_conv(input_batch, weights_filter1, dilation)
+    conv_filter = tf.add(conv_filter, filter_bias1)
+    
+    conv_gate = causal_conv(input_batch, weights_filter2, dilation)
+    conv_gate = tf.add(conv_filter, filter_bias2)    
+    
+    out = tf.tanh(conv_filter) * tf.sigmoid(conv_gate)
+ 
+
+    # The 1x1 conv to produce the residual output
+    weights_dense = tf.Variable(initializer(shape=[1,64,64]) , name="dense")
+    transformed = tf.nn.conv1d(
+        out, weights_dense, stride=1, padding="SAME", name="dense")
+
+    # The 1x1 conv to produce the skip output
+    weights_skip = tf.Variable(initializer(shape=[1,64,64]) , name="skip")
+    #skip output
+    skip_contribution = tf.nn.conv1d(
+        out, weights_skip, stride=1, padding="SAME", name="skip")
+
+    dense_bias = tf.Variable(tf.constant(0.1, shape=[64]), name="dense_bias")
+    skip_bias = tf.Variable(tf.constant(0.1, shape=[64]), name="skip_bias")
+    
+    transformed = transformed + dense_bias
+    skip_contribution = skip_contribution + skip_bias
+
+    return skip_contribution, input_batch + transformed
+
+
+def _create_network(input_batch):
+    '''Construct the WaveNet network.'''
+    dilations = [1,2,4,8,16,32,64,100,
+                 1,2,4,8,16,32,64]
+    
+    outputs = []
+    current_layer = input_batch
+
+    current_layer = create_causal_layer(current_layer)
+
+    # Add all defined dilation layers. #14 layers
+    with tf.name_scope('dilated_stack'):
+        for layer_index, dilation in enumerate(dilations):
+            with tf.name_scope('layer{}'.format(layer_index)):
+                output, current_layer = create_dilation_layer(current_layer, dilation)
+                outputs.append(output)
+
+    #postprocess层
+    with tf.name_scope('postprocessing'):
+        # Perform (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv to
+        # postprocess the output.
+        # conv weight
+        w1 = tf.Variable(initializer(shape=[1,64,64]) , name="W1")
+        b1 = tf.Variable(tf.constant(0.1, shape=[64]), name="b1")   
+
+        w2 = tf.Variable(initializer(shape=[1,64,64]) , name="W2")
+        b2 = tf.Variable(tf.constant(0.1, shape=[64]), name="b2")  
+
+        # We skip connections from the outputs of each layer, adding them
+        # all up here.
+        #将每一层的skip connection输出累加
+        total = sum(outputs)
+        
+        transformed1 = tf.nn.relu(total)
+        conv1 = tf.nn.conv1d(transformed1, w1, stride=1, padding="SAME")
+        conv1 = tf.add(conv1, b1)
+        
+        transformed2 = tf.nn.relu(conv1)
+        conv2 = tf.nn.conv1d(transformed2, w2, stride=1, padding="SAME")
+        conv2 = tf.add(conv2, b2)
+
+    return conv2
+
+
 with tf.Graph().as_default(), tf.device('/cpu:0'):
     
     with tf.name_scope('input'):
